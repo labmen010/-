@@ -1,0 +1,279 @@
+:root {
+    --bg-page: #f2f4f7;
+    --bg-panel: #ffffff;
+    --bg-sidebar: #25272c;
+    --bg-sidebar-active: #2f8d93;
+    --text-primary: #1f2937;
+    --text-sub: #6b7280;
+    --line: #e5e7eb;
+    --primary: #3195d8;
+    --primary-hover: #227cb7;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+.topbar {
+    height: 64px;
+    background: #22252b;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+}
+
+.brand {
+    font-size: 28px;
+    font-weight: 700;
+}
+
+.topnav {
+    display: flex;
+    gap: 20px;
+}
+
+.topnav a {
+    color: #c7c9ce;
+    text-decoration: none;
+    padding: 10px 4px;
+    border-bottom: 2px solid transparent;
+}
+
+.topnav a.active,
+.topnav a:hover {
+    color: #2fd0dd;
+    border-bottom-color: #2fd0dd;
+}
+
+.user-panel {
+    font-size: 14px;
+    color: #d1d5db;
+}
+
+.layout {
+    display: flex;
+    min-height: calc(100vh - 64px);
+}
+
+.sidebar {
+    width: 210px;
+    background: var(--bg-sidebar);
+    padding-top: 12px;
+}
+
+.menu-item {
+    display: block;
+    color: #d8dbe2;
+    text-decoration: none;
+    padding: 14px 18px;
+    border-left: 4px solid transparent;
+}
+
+.menu-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.menu-item.active {
+    background: var(--bg-sidebar-active);
+    color: #fff;
+    border-left-color: #8fdbe0;
+}
+
+.content {
+    flex: 1;
+    padding: 14px 16px;
+}
+
+.crumb {
+    color: var(--text-sub);
+    margin-bottom: 12px;
+}
+
+.card {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.filter-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+    color: #374151;
+}
+
+input,
+select {
+    height: 36px;
+    border: 1px solid #cdd3dd;
+    border-radius: 4px;
+    padding: 0 10px;
+    outline: none;
+}
+
+input:focus,
+select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(49, 149, 216, 0.15);
+}
+
+.filter-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.btn {
+    height: 36px;
+    min-width: 88px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: #fff;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+.btn-secondary {
+    background: #fff;
+    color: #4b5563;
+    border-color: #cfd5dd;
+}
+
+.toolbar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.table-wrap {
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1060px;
+}
+
+th,
+td {
+    border-bottom: 1px solid var(--line);
+    padding: 10px 8px;
+    text-align: center;
+    font-size: 14px;
+}
+
+thead th {
+    background: #f8fafc;
+    color: #374151;
+}
+
+.actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.action-link {
+    color: #3094d7;
+    cursor: pointer;
+    user-select: none;
+}
+
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.switch button {
+    width: 44px;
+    height: 24px;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+    color: #fff;
+    font-size: 12px;
+}
+
+.switch .on {
+    background: #71b843;
+}
+
+.switch .off {
+    background: #9ca3af;
+}
+
+.pagination {
+    margin-top: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+}
+
+.page-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+@media (max-width: 1080px) {
+    .topbar {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .layout {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        display: flex;
+        overflow-x: auto;
+        padding: 0;
+    }
+
+    .menu-item {
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+    }
+
+    .menu-item.active {
+        border-bottom-color: #8fdbe0;
+    }
+
+    .filter-grid {
+        grid-template-columns: repeat(2, minmax(150px, 1fr));
+    }
+}

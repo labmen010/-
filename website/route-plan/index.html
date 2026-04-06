@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>航线规划 - 无人机智能巡检管控系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">无人机智能巡检管控系统</div>
+        <nav class="topnav">
+            <a href="#">管控中心</a>
+            <a class="active" href="../task-center/index.html">作业中心</a>
+            <a href="#">飞控中心</a>
+            <a href="#">系统中心</a>
+        </nav>
+        <div class="user-panel">管理员：admin</div>
+    </header>
+
+    <main class="layout">
+        <aside class="sidebar">
+            <a class="menu-item" href="../task-center/index.html">任务管理</a>
+            <a class="menu-item" href="#">任务记录</a>
+            <a class="menu-item active" href="index.html">航线规划</a>
+            <a class="menu-item" href="#">巡检对象管理</a>
+            <a class="menu-item" href="#">禁飞区管理</a>
+        </aside>
+
+        <section class="content">
+            <div class="crumb">飞控中心 / 航线规划 / 创建航线</div>
+
+            <div class="area-bar card">
+                <select id="province">
+                    <option>省</option>
+                    <option>河北省</option>
+                    <option>广东省</option>
+                </select>
+                <select id="city">
+                    <option>市</option>
+                    <option>石家庄市</option>
+                    <option>广州市</option>
+                </select>
+                <select id="district">
+                    <option>区/县</option>
+                    <option>长安区</option>
+                    <option>越秀区</option>
+                </select>
+                <button id="areaConfirm" class="btn btn-primary">确定</button>
+            </div>
+
+            <div class="map-wrap">
+                <div class="map-canvas" id="mapCanvas">
+                    <div class="map-mask"></div>
+                </div>
+
+                <section class="route-panel card">
+                    <button id="backToTask" class="link-btn">返回</button>
+                    <h3>航线设置</h3>
+
+                    <label>航线名称
+                        <input id="routeName" type="text" placeholder="请输入航线名称">
+                    </label>
+                    <label>起始点经度(°)
+                        <input id="lng" type="text" placeholder="请输入经度">
+                    </label>
+                    <label>起始点纬度(°)
+                        <input id="lat" type="text" placeholder="请输入纬度">
+                    </label>
+                    <label>航点间距(m)
+                        <input id="distance" type="text" placeholder="请输入航点间距">
+                    </label>
+                    <label>航点数量
+                        <input id="pointCount" type="text" placeholder="请输入航点数量">
+                    </label>
+                    <label>航点方向(°)
+                        <input id="direction" type="text" placeholder="请输入方向角度">
+                    </label>
+                    <label>航线高度(m)
+                        <input id="height" type="text" placeholder="请输入航线高度">
+                    </label>
+
+                    <div class="panel-actions">
+                        <button id="saveRoute" class="btn btn-primary">确认</button>
+                        <button id="cancelRoute" class="btn btn-secondary">取消</button>
+                    </div>
+
+                    <p class="tip" id="formTip"></p>
+                </section>
+
+                <div class="tool-group">
+                    <button class="tool-btn active" data-tool="point">航点</button>
+                    <button class="tool-btn" data-tool="line">航线</button>
+                    <button class="tool-btn" data-tool="area">区域</button>
+                </div>
+            </div>
+
+            <section class="card draft-card">
+                <h4>航线草稿</h4>
+                <ul id="draftList"></ul>
+            </section>
+        </section>
+    </main>
+
+    <script src="script.js"></script>
+</body>
+</html>
