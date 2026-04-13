@@ -10,10 +10,30 @@
     <h3><strong>无人机后台管理系统</strong></h3>
     <div id="outer_div">
         <div id="login_div">Login</div>
-        <div class="inner"><input type="text" name="name" placeholder="请输入姓名"></div>
-        <div class="inner"><input type="password" name="password" placeholder="请输入密码"></div>
-        <div class="inner"><button id="login_btn">登录</button></div>
+        <div class="inner"><input id="username" type="text" name="name" placeholder="请输入姓名"></div>
+        <div class="inner"><input id="password" type="password" name="password" placeholder="请输入密码"></div>
+        <div class="inner button-row">
+            <button id="login_btn">登录</button>
+            <button id="open_register_btn" class="secondary-btn" type="button">注册账号</button>
+        </div>
+        <p id="login_tip"></p>
     </div>
+
+    <div id="register_modal" class="modal hidden">
+        <div class="modal-card">
+            <h4>注册账号</h4>
+            <div class="modal-field"><input id="register_display_name" type="text" placeholder="显示名称"></div>
+            <div class="modal-field"><input id="register_username" type="text" placeholder="用户名（至少3位）"></div>
+            <div class="modal-field"><input id="register_password" type="password" placeholder="密码（至少6位）"></div>
+            <div class="modal-field"><input id="register_confirm_password" type="password" placeholder="确认密码"></div>
+            <p id="register_tip"></p>
+            <div class="modal-actions">
+                <button id="register_btn" type="button">提交注册</button>
+                <button id="close_register_btn" class="secondary-btn" type="button">取消</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>

@@ -57,6 +57,17 @@
             font-size: 14px;
         }
 
+        .history-list {
+            margin: 0;
+            padding-left: 18px;
+            font-size: 14px;
+            color: #374151;
+        }
+
+        .history-list li {
+            margin: 8px 0;
+        }
+
         @media (max-width: 1080px) {
             .detect-grid {
                 grid-template-columns: 1fr;
@@ -73,7 +84,7 @@
             <a href="#">飞控中心</a>
             <a href="#">系统中心</a>
         </nav>
-        <div class="user-panel">管理员：admin</div>
+        <div id="userPanel" class="user-panel">管理员：admin</div>
     </header>
 
     <main class="layout">
@@ -110,18 +121,42 @@
                     </div>
                 </div>
             </section>
+
+            <section class="card">
+                <div class="hint">最近检测记录</div>
+                <ul id="historyList" class="history-list"></ul>
+            </section>
         </section>
     </main>
 
     <script>
         const API_BASE = "http://127.0.0.1:8000";
         const refs = {
+            userPanel: document.getElementById("userPanel"),
             fileInput: document.getElementById("fileInput"),
             detectBtn: document.getElementById("detectBtn"),
             statusText: document.getElementById("statusText"),
             resultList: document.getElementById("resultList"),
-            resultStage: document.getElementById("resultStage")
+            resultStage: document.getElementById("resultStage"),
+            historyList: document.getElementById("historyList")
         };
+
+        function initUserPanel() {
+            const raw = localStorage.getItem("uav_user");
+            if (!raw) {
+                window.location.href = "../login/login.html";
+                return;
+            }
+
+            try {
+                const user = JSON.parse(raw);
+                const displayName = user.displayName || user.username || "未知用户";
+                refs.userPanel.textContent = `管理员：${displayName}`;
+            } catch (error) {
+                localStorage.removeItem("uav_user");
+                window.location.href = "../login/login.html";
+            }
+        }
 
         function setStatus(text, isError = false) {
             refs.statusText.textContent = text;
@@ -152,6 +187,27 @@
                 const conf = (Number(item.confidence) * 100).toFixed(2);
                 return `<li>${item.label}（置信度 ${conf}%）</li>`;
             }).join("");
+        }
+
+        function renderHistory(items) {
+            if (!Array.isArray(items) || items.length === 0) {
+                refs.historyList.innerHTML = "<li>暂无检测记录</li>";
+                return;
+            }
+
+            refs.historyList.innerHTML = items.map((item) => {
+                const result = item.status === "success" ? "成功" : "失败";
+                return `<li>${item.createdAt} | ${item.filename} | ${result} | 目标数: ${item.objectCount}</li>`;
+            }).join("");
+        }
+
+        async function loadHistory() {
+            const response = await fetch(`${API_BASE}/api/detections?limit=20`);
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.detail || "检测记录加载失败");
+            }
+            renderHistory(data.items);
         }
 
         async function detectImage() {
@@ -185,6 +241,7 @@
                 renderObjects(data.result.objects);
                 renderResultImage(data.result.result_image_url);
                 setStatus(`检测完成，共识别 ${data.result.objects.length} 个目标`);
+                await loadHistory();
             } catch (error) {
                 setStatus(`检测失败：${error.message}`, true);
                 refs.resultList.innerHTML = "<li>请检查后端服务与模型配置</li>";
@@ -194,6 +251,12 @@
         }
 
         refs.detectBtn.addEventListener("click", detectImage);
+
+        loadHistory().catch((error) => {
+            refs.historyList.innerHTML = `<li>${error.message}</li>`;
+        });
+
+        initUserPanel();
     </script>
 </body>
 </html>

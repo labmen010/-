@@ -15,7 +15,7 @@
             <a href="#">飞控中心</a>
             <a href="#">系统中心</a>
         </nav>
-        <div class="user-panel">管理员：admin</div>
+        <div id="userPanel" class="user-panel">管理员：admin</div>
     </header>
 
     <main class="layout">
@@ -71,8 +71,8 @@
 
             <section class="card table-card">
                 <div class="toolbar">
-                    <button class="btn btn-primary">新增任务</button>
-                    <button class="btn btn-secondary">批量下载</button>
+                    <button id="createTaskBtn" class="btn btn-primary">新增任务</button>
+                    <button id="downloadBtn" class="btn btn-secondary">批量下载</button>
                 </div>
 
                 <div class="table-wrap">
@@ -106,6 +106,59 @@
             </section>
         </section>
     </main>
+
+    <div id="taskModal" class="task-modal hidden">
+        <div class="task-modal-card">
+            <div class="task-modal-header">
+                <h3 id="taskModalTitle">新增任务</h3>
+                <button id="taskModalClose" class="task-modal-close" type="button">×</button>
+            </div>
+
+            <div class="task-form-grid">
+                <label>任务名称<input id="formName" type="text" placeholder="请输入任务名称"></label>
+                <label>任务类型
+                    <select id="formType">
+                        <option value="周期性任务">周期性任务</option>
+                        <option value="单次性任务">单次性任务</option>
+                    </select>
+                </label>
+                <label>执行周期
+                    <select id="formCycle">
+                        <option value="每天">每天</option>
+                        <option value="每3天">每3天</option>
+                        <option value="每7天">每7天</option>
+                        <option value="每30天">每30天</option>
+                        <option value="单次">单次</option>
+                    </select>
+                </label>
+                <label>任务状态
+                    <select id="formStatus">
+                        <option value="执行中">执行中</option>
+                        <option value="已完成">已完成</option>
+                        <option value="待执行" selected>待执行</option>
+                        <option value="已取消">已取消</option>
+                    </select>
+                </label>
+                <label>开始时间<input id="formStartTime" type="text" placeholder="例如 2026-04-10 09:00"></label>
+                <label>结束时间<input id="formEndTime" type="text" placeholder="例如 2026-04-30"></label>
+                <label>已执行次数<input id="formExecutedDone" type="number" min="0" value="0"></label>
+                <label>总执行次数<input id="formExecutedTotal" type="number" min="1" value="1"></label>
+                <label>启用状态
+                    <select id="formEnabled">
+                        <option value="true" selected>启用</option>
+                        <option value="false">禁用</option>
+                    </select>
+                </label>
+            </div>
+
+            <p id="taskFormTip" class="task-form-tip"></p>
+
+            <div class="task-modal-actions">
+                <button id="taskModalSubmit" class="btn btn-primary" type="button">保存</button>
+                <button id="taskModalCancel" class="btn btn-secondary" type="button">取消</button>
+            </div>
+        </div>
+    </div>
 
     <script src="script.js"></script>
 </body>

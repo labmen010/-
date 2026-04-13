@@ -1,11 +1,16 @@
 import os
 import shutil
+from datetime import datetime
 from uuid import uuid4
-from typing import Optional
-from fastapi import FastAPI, File, UploadFile
+from typing import Generator, Optional
+
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlalchemy import Boolean, DateTime, Integer, String, create_engine
+from sqlalchemy.orm import Session, declarative_base, mapped_column, sessionmaker
 
 try:
     from ultralytics import YOLO
@@ -39,6 +44,202 @@ MODEL_PATH = os.getenv("YOLOV26_MODEL", "./best.pt")
 MODEL_PATH = os.path.abspath(os.path.expanduser(MODEL_PATH))
 model_load_error: Optional[str] = None
 yolo_model = None
+
+# ==========================================
+# MySQL 配置与数据库模型
+# ==========================================
+MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+MYSQL_USER = os.getenv("MYSQL_USER", "root")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "Wcy12138")
+MYSQL_DB = os.getenv("MYSQL_DB", "uav_system")
+
+DATABASE_URL = (
+    f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
+    f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}?charset=utf8mb4"
+)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = mapped_column(Integer, primary_key=True, index=True)
+    username = mapped_column(String(64), unique=True, nullable=False, index=True)
+    password = mapped_column(String(128), nullable=False)
+    display_name = mapped_column(String(64), nullable=False, default="管理员")
+    created_at = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = mapped_column(Integer, primary_key=True, index=True)
+    name = mapped_column(String(120), nullable=False, index=True)
+    type = mapped_column(String(32), nullable=False)
+    cycle = mapped_column(String(32), nullable=False)
+    status = mapped_column(String(32), nullable=False, default="待执行")
+    start_time = mapped_column(String(32), nullable=False)
+    end_time = mapped_column(String(32), nullable=False)
+    executed_done = mapped_column(Integer, nullable=False, default=0)
+    executed_total = mapped_column(Integer, nullable=False, default=1)
+    enabled = mapped_column(Boolean, nullable=False, default=True)
+    created_at = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class RouteDraft(Base):
+    __tablename__ = "route_drafts"
+
+    id = mapped_column(Integer, primary_key=True, index=True)
+    name = mapped_column(String(120), nullable=False)
+    province = mapped_column(String(64), nullable=False)
+    city = mapped_column(String(64), nullable=False)
+    district = mapped_column(String(64), nullable=False)
+    lng = mapped_column(String(32), nullable=False)
+    lat = mapped_column(String(32), nullable=False)
+    distance = mapped_column(String(32), nullable=False)
+    point_count = mapped_column(Integer, nullable=False)
+    direction = mapped_column(String(32), nullable=False)
+    height = mapped_column(String(32), nullable=False)
+    created_at = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class DetectionRecord(Base):
+    __tablename__ = "detection_records"
+
+    id = mapped_column(Integer, primary_key=True, index=True)
+    original_filename = mapped_column(String(255), nullable=False)
+    upload_image_url = mapped_column(String(255), nullable=False)
+    result_image_url = mapped_column(String(255), nullable=True)
+    status = mapped_column(String(32), nullable=False)
+    message = mapped_column(String(255), nullable=False)
+    object_count = mapped_column(Integer, nullable=False, default=0)
+    created_at = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=6, max_length=128)
+    displayName: str = Field(min_length=1, max_length=64)
+
+
+class TaskPayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    type: str = Field(min_length=1, max_length=32)
+    cycle: str = Field(min_length=1, max_length=32)
+    status: str = Field(min_length=1, max_length=32)
+    startTime: str = Field(min_length=1, max_length=32)
+    endTime: str = Field(min_length=1, max_length=32)
+    executedDone: int = Field(ge=0)
+    executedTotal: int = Field(ge=1)
+    enabled: bool = True
+
+
+class RoutePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    province: str = Field(min_length=1, max_length=64)
+    city: str = Field(min_length=1, max_length=64)
+    district: str = Field(min_length=1, max_length=64)
+    lng: str = Field(min_length=1, max_length=32)
+    lat: str = Field(min_length=1, max_length=32)
+    distance: str = Field(min_length=1, max_length=32)
+    pointCount: int = Field(ge=2)
+    direction: str = Field(min_length=1, max_length=32)
+    height: str = Field(min_length=1, max_length=32)
+
+
+def get_db() -> Generator[Session, None, None]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def task_to_dict(task: Task) -> dict:
+    return {
+        "id": task.id,
+        "name": task.name,
+        "type": task.type,
+        "cycle": task.cycle,
+        "status": task.status,
+        "startTime": task.start_time,
+        "endTime": task.end_time,
+        "executed": f"{task.executed_done}/{task.executed_total}",
+        "executedDone": task.executed_done,
+        "executedTotal": task.executed_total,
+        "enabled": task.enabled,
+    }
+
+
+def init_seed_data() -> None:
+    db = SessionLocal()
+    try:
+        admin = db.query(User).filter(User.username == "admin").first()
+        if not admin:
+            db.add(User(username="admin", password="admin123", display_name="管理员"))
+
+        if db.query(Task).count() == 0:
+            db.add_all(
+                [
+                    Task(
+                        name="XX区日常巡检",
+                        type="周期性任务",
+                        cycle="每天",
+                        status="执行中",
+                        start_time="2021-11-15 14:00",
+                        end_time="2022-11-14",
+                        executed_done=49,
+                        executed_total=52,
+                        enabled=True,
+                    ),
+                    Task(
+                        name="XX区临时巡检",
+                        type="单次性任务",
+                        cycle="单次",
+                        status="已完成",
+                        start_time="2021-11-01 09:00",
+                        end_time="2021-11-01",
+                        executed_done=1,
+                        executed_total=1,
+                        enabled=True,
+                    ),
+                    Task(
+                        name="XX区紧急巡检",
+                        type="单次性任务",
+                        cycle="单次",
+                        status="待执行",
+                        start_time="2021-11-01 14:00",
+                        end_time="2021-11-01",
+                        executed_done=0,
+                        executed_total=1,
+                        enabled=False,
+                    ),
+                ]
+            )
+        db.commit()
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    Base.metadata.create_all(bind=engine)
+    init_seed_data()
 
 if YOLO is None:
     model_load_error = "未安装 ultralytics，请先安装：pip install ultralytics"
@@ -149,10 +350,212 @@ def run_ai_detection(image_path: str) -> dict:
         }
 
 # ==========================================
+# 接口：登录
+# ==========================================
+@app.post("/api/login")
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    user = (
+        db.query(User)
+        .filter(User.username == payload.username, User.password == payload.password)
+        .first()
+    )
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+
+    return {
+        "message": "登录成功",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "displayName": user.display_name,
+        },
+    }
+
+
+@app.post("/api/register")
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    exists = db.query(User).filter(User.username == payload.username).first()
+    if exists:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+
+    user = User(
+        username=payload.username.strip(),
+        password=payload.password,
+        display_name=payload.displayName.strip(),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "message": "注册成功",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "displayName": user.display_name,
+        },
+    }
+
+
+# ==========================================
+# 接口：任务管理
+# ==========================================
+@app.get("/api/tasks")
+def get_tasks(
+    name: str = "",
+    type: str = "all",
+    cycle: str = "all",
+    status: str = "all",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=6, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Task)
+
+    if name:
+        query = query.filter(Task.name.like(f"%{name}%"))
+    if type != "all":
+        query = query.filter(Task.type == type)
+    if cycle != "all":
+        query = query.filter(Task.cycle == cycle)
+    if status != "all":
+        query = query.filter(Task.status == status)
+
+    total = query.count()
+    rows = (
+        query.order_by(Task.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    return {
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+        "items": [task_to_dict(item) for item in rows],
+    }
+
+
+@app.post("/api/tasks")
+def create_task(payload: TaskPayload, db: Session = Depends(get_db)):
+    if payload.executedDone > payload.executedTotal:
+        raise HTTPException(status_code=400, detail="累计执行次数不能大于总次数")
+
+    task = Task(
+        name=payload.name,
+        type=payload.type,
+        cycle=payload.cycle,
+        status=payload.status,
+        start_time=payload.startTime,
+        end_time=payload.endTime,
+        executed_done=payload.executedDone,
+        executed_total=payload.executedTotal,
+        enabled=payload.enabled,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return {"message": "创建成功", "item": task_to_dict(task)}
+
+
+@app.put("/api/tasks/{task_id}")
+def update_task(task_id: int, payload: TaskPayload, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if payload.executedDone > payload.executedTotal:
+        raise HTTPException(status_code=400, detail="累计执行次数不能大于总次数")
+
+    task.name = payload.name
+    task.type = payload.type
+    task.cycle = payload.cycle
+    task.status = payload.status
+    task.start_time = payload.startTime
+    task.end_time = payload.endTime
+    task.executed_done = payload.executedDone
+    task.executed_total = payload.executedTotal
+    task.enabled = payload.enabled
+    db.commit()
+    db.refresh(task)
+    return {"message": "更新成功", "item": task_to_dict(task)}
+
+
+@app.delete("/api/tasks/{task_id}")
+def delete_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    db.delete(task)
+    db.commit()
+    return {"message": "删除成功"}
+
+
+@app.patch("/api/tasks/{task_id}/toggle")
+def toggle_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task.enabled = not task.enabled
+    db.commit()
+    db.refresh(task)
+    return {"message": "状态已更新", "item": task_to_dict(task)}
+
+
+# ==========================================
+# 接口：航线规划
+# ==========================================
+@app.get("/api/routes")
+def get_routes(limit: int = Query(default=20, ge=1, le=200), db: Session = Depends(get_db)):
+    rows = db.query(RouteDraft).order_by(RouteDraft.id.desc()).limit(limit).all()
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "name": item.name,
+                "province": item.province,
+                "city": item.city,
+                "district": item.district,
+                "lng": item.lng,
+                "lat": item.lat,
+                "distance": item.distance,
+                "pointCount": item.point_count,
+                "direction": item.direction,
+                "height": item.height,
+                "createdAt": item.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for item in rows
+        ]
+    }
+
+
+@app.post("/api/routes")
+def create_route(payload: RoutePayload, db: Session = Depends(get_db)):
+    route = RouteDraft(
+        name=payload.name,
+        province=payload.province,
+        city=payload.city,
+        district=payload.district,
+        lng=payload.lng,
+        lat=payload.lat,
+        distance=payload.distance,
+        point_count=payload.pointCount,
+        direction=payload.direction,
+        height=payload.height,
+    )
+    db.add(route)
+    db.commit()
+    db.refresh(route)
+    return {"message": "航线保存成功", "id": route.id}
+
+
+# ==========================================
 # 接口：接收文件并返回结果
 # ==========================================
 @app.post("/api/detect")
-async def detect(file: UploadFile = File(...)):
+async def detect(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     接收前端上传的文件，保存后送入 AI 模型，最后返回 JSON 结果
     """
@@ -174,6 +577,17 @@ async def detect(file: UploadFile = File(...)):
     # 这里调用上面定义的 run_ai_detection 函数
     detection_result = run_ai_detection(file_path)
 
+    record = DetectionRecord(
+        original_filename=file.filename or "unknown",
+        upload_image_url=f"/static/uploads/{saved_filename}",
+        result_image_url=detection_result.get("result_image_url"),
+        status=detection_result.get("status", "failed"),
+        message=detection_result.get("message", ""),
+        object_count=len(detection_result.get("objects", [])),
+    )
+    db.add(record)
+    db.commit()
+
     # 4. 返回结果给前端
     return {
         "filename": file.filename,
@@ -183,9 +597,29 @@ async def detect(file: UploadFile = File(...)):
 
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     # 兼容旧接口，转发到新检测接口
-    return await detect(file)
+    return await detect(file, db)
+
+
+@app.get("/api/detections")
+def get_detections(limit: int = Query(default=20, ge=1, le=200), db: Session = Depends(get_db)):
+    rows = db.query(DetectionRecord).order_by(DetectionRecord.id.desc()).limit(limit).all()
+    return {
+        "items": [
+            {
+                "id": item.id,
+                "filename": item.original_filename,
+                "status": item.status,
+                "message": item.message,
+                "objectCount": item.object_count,
+                "uploadImageUrl": item.upload_image_url,
+                "resultImageUrl": item.result_image_url,
+                "createdAt": item.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            for item in rows
+        ]
+    }
 
 # ==========================================
 # 启动服务器
