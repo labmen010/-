@@ -8,7 +8,7 @@ from typing import Any, Generator, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import Boolean, DateTime, Integer, String, create_engine
@@ -48,6 +48,20 @@ os.makedirs(RESULT_DIR, exist_ok=True)
 # 挂载静态目录，便于前端直接访问上传图和结果图
 app.mount("/static/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/static/results", StaticFiles(directory=RESULT_DIR), name="results")
+
+BACKEND_DIR = os.path.dirname(__file__)
+WEBSITE_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
+PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, "..", ".."))
+HTML_ROOT = os.path.join(PROJECT_ROOT, "html")
+FRONTEND_PAGES = ("index", "login", "route-plan", "task-center")
+
+for page in FRONTEND_PAGES:
+    page_dir = os.path.join(WEBSITE_ROOT, page)
+    if os.path.isdir(page_dir):
+        app.mount(f"/website/{page}", StaticFiles(directory=page_dir, html=True), name=f"website-{page}")
+
+if os.path.isdir(HTML_ROOT):
+    app.mount("/html", StaticFiles(directory=HTML_ROOT), name="html-assets")
 
 MODEL_PATH = os.getenv("YOLOV26_MODEL", "./best.pt")
 MODEL_PATH = os.path.abspath(os.path.expanduser(MODEL_PATH))
@@ -1140,6 +1154,16 @@ def get_latest_detection(db: Session = Depends(get_db)):
 # ==========================================
 # 启动服务器
 # ==========================================
+@app.get("/", include_in_schema=False)
+def root_page():
+    return RedirectResponse(url="/website/index/index.html", status_code=307)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
+
+
 if __name__ == "__main__":
     import uvicorn
     # 启动服务，监听 8000 端口

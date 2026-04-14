@@ -1,7 +1,8 @@
 const API_BASE = "http://127.0.0.1:8000";
-const SETTINGS_KEY = "uav_route_plan_settings";
-const DEFAULT_MAP_IMAGE = "map/HighresScreenshot00000.png";
-const DRAG_THRESHOLD_PX = 5;
+const DEFAULT_MAP_CENTER = [23.1291, 113.2644];
+const DEFAULT_MAP_ZOOM = 13.2;
+const DEFAULT_ALTITUDE = 25;
+const METERS_PER_DEG_LAT = 111320;
 
 const refs = {
     userPanel: document.getElementById("userPanel"),
@@ -17,51 +18,46 @@ const refs = {
     pointCount: document.getElementById("pointCount"),
     direction: document.getElementById("direction"),
     height: document.getElementById("height"),
+    defaultAltitude: document.getElementById("defaultAltitude"),
+    routeProfile: document.getElementById("routeProfile"),
+    gridScale: document.getElementById("gridScale"),
+    gridScaleValue: document.getElementById("gridScaleValue"),
+    fitRoute: document.getElementById("fitRoute"),
     saveRoute: document.getElementById("saveRoute"),
     publishMission: document.getElementById("publishMission"),
     cancelRoute: document.getElementById("cancelRoute"),
+    clearWaypoints: document.getElementById("clearWaypoints"),
     formTip: document.getElementById("formTip"),
     missionTip: document.getElementById("missionTip"),
+    navSummary: document.getElementById("navSummary"),
     draftList: document.getElementById("draftList"),
     waypointList: document.getElementById("waypointList"),
-    routeLayer: document.getElementById("routeLayer"),
     mapCanvas: document.getElementById("mapCanvas"),
-    mapImage: document.getElementById("mapImage"),
-    mapImageUrl: document.getElementById("mapImageUrl"),
-    defaultAltitude: document.getElementById("defaultAltitude"),
-    invertX: document.getElementById("invertX"),
-    invertY: document.getElementById("invertY"),
-    anchorAX: document.getElementById("anchorAX"),
-    anchorAY: document.getElementById("anchorAY"),
-    anchorBX: document.getElementById("anchorBX"),
-    anchorBY: document.getElementById("anchorBY"),
-    setAnchorA: document.getElementById("setAnchorA"),
-    setAnchorB: document.getElementById("setAnchorB"),
-    clearCalibration: document.getElementById("clearCalibration"),
-    anchorATip: document.getElementById("anchorATip"),
-    anchorBTip: document.getElementById("anchorBTip"),
-    clearWaypoints: document.getElementById("clearWaypoints"),
+    realMap: document.getElementById("realMap"),
+    mapStatus: document.getElementById("mapStatus"),
     tools: document.querySelectorAll(".tool-btn")
 };
 
-const drafts = [];
 const state = {
+    map: null,
+    gridLayer: null,
+    baseTileLayer: null,
+    fallbackTileEnabled: false,
+    tileErrorCount: 0,
+    routeControl: null,
+    fallbackRouteLine: null,
+    markers: [],
     waypoints: [],
-    currentRouteDraftId: null,
     activeTool: "point",
-    pendingCalibrationAnchor: "",
-    calibrationAnchorA: null,
-    calibrationAnchorB: null,
-    mapPanX: 0,
-    mapPanY: 0,
-    dragging: false,
-    dragPointerId: null,
-    dragStartX: 0,
-    dragStartY: 0,
-    dragStartPanX: 0,
-    dragStartPanY: 0,
-    dragMoved: false,
-    suppressNextClick: false
+    routeProfile: "driving",
+    gridScale: 1,
+    currentRouteDraftId: null
+};
+
+const drafts = [];
+const AREA_CENTER_MAP = {
+    "河北省-石家庄市-长安区": [38.04895, 114.54589],
+    "广东省-广州市-越秀区": [23.13171, 113.26627]
 };
 
 function escapeHtml(value) {
@@ -73,397 +69,62 @@ function escapeHtml(value) {
         .replaceAll("'", "&#39;");
 }
 
-function loadSettings() {
-    try {
-        const raw = localStorage.getItem(SETTINGS_KEY);
-        if (!raw) {
-            return {
-                mapImageUrl: DEFAULT_MAP_IMAGE,
-                defaultAltitude: "25",
-                invertX: false,
-                invertY: false,
-                calibrationAnchorA: null,
-                calibrationAnchorB: null
-            };
-        }
-
-        const parsed = JSON.parse(raw);
-        return {
-            mapImageUrl: parsed.mapImageUrl || DEFAULT_MAP_IMAGE,
-            defaultAltitude: parsed.defaultAltitude ?? "25",
-            invertX: Boolean(parsed.invertX),
-            invertY: Boolean(parsed.invertY),
-            calibrationAnchorA: parsed.calibrationAnchorA || null,
-            calibrationAnchorB: parsed.calibrationAnchorB || null
-        };
-    } catch (error) {
-        return {
-            mapImageUrl: DEFAULT_MAP_IMAGE,
-            defaultAltitude: "25",
-            invertX: false,
-            invertY: false,
-            calibrationAnchorA: null,
-            calibrationAnchorB: null
-        };
+function setTip(el, message, isError = true) {
+    if (!el) {
+        return;
     }
+    el.style.color = isError ? "#ef4444" : "#16a34a";
+    el.textContent = message;
 }
 
-function saveSettings() {
-    const payload = {
-        mapImageUrl: refs.mapImageUrl.value.trim(),
-        defaultAltitude: refs.defaultAltitude.value.trim(),
-        invertX: refs.invertX.checked,
-        invertY: refs.invertY.checked,
-        calibrationAnchorA: state.calibrationAnchorA,
-        calibrationAnchorB: state.calibrationAnchorB
-    };
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
-}
-
-function applySettings() {
-    const settings = loadSettings();
-    refs.mapImageUrl.value = settings.mapImageUrl || DEFAULT_MAP_IMAGE;
-    refs.defaultAltitude.value = settings.defaultAltitude;
-    refs.invertX.checked = settings.invertX;
-    refs.invertY.checked = settings.invertY;
-    state.calibrationAnchorA = settings.calibrationAnchorA;
-    state.calibrationAnchorB = settings.calibrationAnchorB;
-    refs.anchorAX.value = state.calibrationAnchorA?.worldX ?? "";
-    refs.anchorAY.value = state.calibrationAnchorA?.worldY ?? "";
-    refs.anchorBX.value = state.calibrationAnchorB?.worldX ?? "";
-    refs.anchorBY.value = state.calibrationAnchorB?.worldY ?? "";
-    updateCalibrationTips();
-}
-
-function persistAndRefreshBackground() {
-    saveSettings();
-    const url = refs.mapImageUrl.value.trim() || DEFAULT_MAP_IMAGE;
-    refs.mapImageUrl.value = url;
-    refs.mapImage.src = encodeURI(url);
+function showTip(message, isError = true) {
+    setTip(refs.formTip, message, isError);
 }
 
 function showMissionTip(message, isError = true) {
-    refs.missionTip.style.color = isError ? "#ef4444" : "#16a34a";
-    refs.missionTip.textContent = message;
+    setTip(refs.missionTip, message, isError);
 }
 
-function updateCalibrationTips() {
-    refs.anchorATip.textContent = state.calibrationAnchorA
-        ? `屏幕(${Math.round(state.calibrationAnchorA.u * 1000)}, ${Math.round(state.calibrationAnchorA.v * 1000)})`
-        : "尚未记录";
-    refs.anchorBTip.textContent = state.calibrationAnchorB
-        ? `屏幕(${Math.round(state.calibrationAnchorB.u * 1000)}, ${Math.round(state.calibrationAnchorB.v * 1000)})`
-        : "尚未记录";
+function showNavSummary(message, isError = false) {
+    setTip(refs.navSummary, message, isError);
 }
 
-function getBaseMapViewport() {
-    const rect = refs.mapCanvas.getBoundingClientRect();
-    const naturalWidth = refs.mapImage.naturalWidth || rect.width;
-    const naturalHeight = refs.mapImage.naturalHeight || rect.height;
-
-    if (!naturalWidth || !naturalHeight || !rect.width || !rect.height) {
-        return { left: 0, top: 0, width: rect.width, height: rect.height };
-    }
-
-    const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight);
-    const width = naturalWidth * scale;
-    const height = naturalHeight * scale;
-
-    return {
-        left: (rect.width - width) / 2,
-        top: (rect.height - height) / 2,
-        width,
-        height
-    };
+function isNumber(value) {
+    return value !== "" && !Number.isNaN(Number(value));
 }
 
-function getMapViewport() {
-    const base = getBaseMapViewport();
-    return {
-        ...base,
-        left: base.left + state.mapPanX,
-        top: base.top + state.mapPanY
-    };
+function formatDuration(seconds) {
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return "0 min";
+    }
+    const minutes = Math.round(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    if (hours > 0) {
+        return `${hours}h ${mins}m`;
+    }
+    return `${Math.max(mins, 1)}m`;
 }
 
-function getMapPanBounds() {
-    const base = getBaseMapViewport();
-    return {
-        minX: -Math.max(0, base.left),
-        maxX: Math.max(0, base.left),
-        minY: -Math.max(0, base.top),
-        maxY: Math.max(0, base.top)
-    };
+function estimateProfileSpeed(profile) {
+    if (profile === "walking") {
+        return 1.35;
+    }
+    if (profile === "cycling") {
+        return 5.6;
+    }
+    return 13.9;
 }
 
-function clampMapPan(nextX, nextY) {
-    const bounds = getMapPanBounds();
-    return {
-        x: Math.min(bounds.maxX, Math.max(bounds.minX, nextX)),
-        y: Math.min(bounds.maxY, Math.max(bounds.minY, nextY))
-    };
-}
-
-function applyMapImageTransform() {
-    refs.mapImage.style.transform = `translate(${state.mapPanX}px, ${state.mapPanY}px)`;
-}
-
-function setMapPan(nextX, nextY, shouldRender = true) {
-    const clamped = clampMapPan(nextX, nextY);
-    state.mapPanX = clamped.x;
-    state.mapPanY = clamped.y;
-    applyMapImageTransform();
-    if (shouldRender) {
-        renderWaypoints();
-    }
-}
-
-function keepMapPanInBounds() {
-    const clamped = clampMapPan(state.mapPanX, state.mapPanY);
-    state.mapPanX = clamped.x;
-    state.mapPanY = clamped.y;
-    applyMapImageTransform();
-}
-
-function updateMapCanvasModeClass() {
-    refs.mapCanvas.classList.toggle("mode-point", state.activeTool === "point");
-}
-
-function readCalibration() {
-    const anchorA = state.calibrationAnchorA;
-    const anchorB = state.calibrationAnchorB;
-
-    if (!anchorA || !anchorB) {
-        throw new Error("请先记录标定点 A 和 B");
-    }
-
-    const worldAX = Number(refs.anchorAX.value);
-    const worldAY = Number(refs.anchorAY.value);
-    const worldBX = Number(refs.anchorBX.value);
-    const worldBY = Number(refs.anchorBY.value);
-
-    if ([worldAX, worldAY, worldBX, worldBY].some((value) => Number.isNaN(value))) {
-        throw new Error("标定点的世界坐标必须是数字");
-    }
-
-    const defaultAltitude = Number(refs.defaultAltitude.value);
-    if (Number.isNaN(defaultAltitude) || defaultAltitude <= 0) {
-        throw new Error("默认航高必须是大于 0 的数字");
-    }
-
-    return {
-        anchorA,
-        anchorB,
-        worldAX,
-        worldAY,
-        worldBX,
-        worldBY,
-        invertX: refs.invertX.checked,
-        invertY: refs.invertY.checked,
-        defaultAltitude
-    };
-}
-
-function pointToWorld(point, calibration) {
-    const worldAX = calibration.worldAX;
-    const worldAY = calibration.worldAY;
-    const worldBX = calibration.worldBX;
-    const worldBY = calibration.worldBY;
-
-    const screenA = calibration.anchorA;
-    const screenB = calibration.anchorB;
-
-    const deltaU = screenB.u - screenA.u;
-    const deltaV = screenB.v - screenA.v;
-    const worldDeltaX = worldBX - worldAX;
-    const worldDeltaY = worldBY - worldAY;
-
-    const safeDeltaU = Math.abs(deltaU) < 1e-6 ? 1e-6 : deltaU;
-    const safeDeltaV = Math.abs(deltaV) < 1e-6 ? 1e-6 : deltaV;
-
-    const normalizedU = (point.u - screenA.u) / safeDeltaU;
-    const normalizedV = (point.v - screenA.v) / safeDeltaV;
-
-    const mappedX = worldAX + normalizedU * worldDeltaX;
-    const mappedY = worldAY + normalizedV * worldDeltaY;
-
-    const appliedX = calibration.invertX ? worldAX - (mappedX - worldAX) : mappedX;
-    const appliedY = calibration.invertY ? worldAY - (mappedY - worldAY) : mappedY;
-
-    return {
-        worldX: Number(appliedX.toFixed(3)),
-        worldY: Number(appliedY.toFixed(3)),
-        worldZ: Number(calibration.defaultAltitude.toFixed(3))
-    };
-}
-
-function getWaypointSummary(point, index, calibration) {
-    const worldPoint = pointToWorld(point, calibration);
-    return `${index + 1}. (${worldPoint.worldX}, ${worldPoint.worldY}, ${worldPoint.worldZ})`;
-}
-
-function renderWaypoints() {
-    let calibration = null;
-    try {
-        calibration = readCalibration();
-    } catch (error) {
-        calibration = null;
-    }
-    refs.pointCount.value = String(state.waypoints.length || 0);
-
-    if (state.waypoints.length === 0) {
-        refs.waypointList.innerHTML = '<li class="waypoint-empty">尚未添加航点</li>';
-        refs.routeLayer.innerHTML = "";
-        return;
-    }
-
-    const viewport = getMapViewport();
-    const canvasRect = refs.mapCanvas.getBoundingClientRect();
-
-    const toSvgPoint = (item) => {
-        const x = viewport.left + item.u * viewport.width;
-        const y = viewport.top + item.v * viewport.height;
-        const xPct = canvasRect.width > 0 ? (x / canvasRect.width) * 1000 : 0;
-        const yPct = canvasRect.height > 0 ? (y / canvasRect.height) * 1000 : 0;
-        return { x: xPct, y: yPct };
-    };
-
-    const pointList = state.waypoints.map((item, index) => {
-        const worldPoint = calibration ? pointToWorld(item, calibration) : null;
-        const worldText = worldPoint ? `世界: (${worldPoint.worldX}, ${worldPoint.worldY}, ${worldPoint.worldZ})` : "世界坐标待校准";
-        return `
-            <li class="waypoint-item">
-                <span class="waypoint-badge">${index + 1}</span>
-                <span class="waypoint-text">屏幕: (${Math.round(item.u * 1000)}, ${Math.round(item.v * 1000)})<br>${worldText}</span>
-                <button class="waypoint-remove" type="button" data-index="${index}">删除</button>
-            </li>
-        `;
-    }).join("");
-
-    const pathPoints = state.waypoints.map((item) => {
-        const point = toSvgPoint(item);
-        return `${point.x},${point.y}`;
-    }).join(" ");
-    const svgNodes = [];
-    if (state.waypoints.length > 1) {
-        svgNodes.push(`<polyline class="route-line" points="${pathPoints}"></polyline>`);
-    }
-    state.waypoints.forEach((item, index) => {
-        const point = toSvgPoint(item);
-        const x = point.x;
-        const y = point.y;
-        svgNodes.push(`<circle class="route-point" cx="${x}" cy="${y}" r="11"></circle>`);
-        svgNodes.push(`<text class="route-point-label" x="${x}" y="${y + 5}">${index + 1}</text>`);
-    });
-
-    refs.waypointList.innerHTML = pointList;
-    refs.routeLayer.innerHTML = svgNodes.join("");
-
-    refs.waypointList.querySelectorAll(".waypoint-remove").forEach((button) => {
-        button.addEventListener("click", () => {
-            const index = Number(button.dataset.index);
-            state.waypoints.splice(index, 1);
-            renderWaypoints();
-            showMissionTip("航点已删除", false);
-        });
-    });
-}
-
-function addWaypointFromEvent(event) {
-    if (state.suppressNextClick) {
-        state.suppressNextClick = false;
-        return;
-    }
-
-    const rect = refs.mapCanvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-        return;
-    }
-
-    const viewport = getMapViewport();
-    const imgLeft = rect.left + viewport.left;
-    const imgTop = rect.top + viewport.top;
-    const imgRight = imgLeft + viewport.width;
-    const imgBottom = imgTop + viewport.height;
-
-    if (event.clientX < imgLeft || event.clientX > imgRight || event.clientY < imgTop || event.clientY > imgBottom) {
-        showMissionTip("请点击图片本体区域，避免留白区域", true);
-        return;
-    }
-
-    const u = Math.min(1, Math.max(0, (event.clientX - imgLeft) / viewport.width));
-    const v = Math.min(1, Math.max(0, (event.clientY - imgTop) / viewport.height));
-
-    if (state.pendingCalibrationAnchor) {
-        const selectedAnchor = state.pendingCalibrationAnchor;
-        const worldXField = state.pendingCalibrationAnchor === "A" ? refs.anchorAX : refs.anchorBX;
-        const worldYField = state.pendingCalibrationAnchor === "A" ? refs.anchorAY : refs.anchorBY;
-        const worldX = Number(worldXField.value);
-        const worldY = Number(worldYField.value);
-
-        if (Number.isNaN(worldX) || Number.isNaN(worldY)) {
-            showMissionTip(`请先填写标定点 ${state.pendingCalibrationAnchor} 的世界坐标`, true);
-            return;
-        }
-
-        const anchor = { u, v, worldX, worldY };
-        if (state.pendingCalibrationAnchor === "A") {
-            state.calibrationAnchorA = anchor;
-        } else {
-            state.calibrationAnchorB = anchor;
-        }
-
-        updateCalibrationTips();
-        saveSettings();
-        renderWaypoints();
-        state.pendingCalibrationAnchor = "";
-        showMissionTip(`已记录标定点 ${selectedAnchor}`, false);
-        return;
-    }
-
-    if (state.activeTool !== "point") {
-        showMissionTip("当前工具不支持添加航点，请切换到“航点”", true);
-        return;
-    }
-
-    state.waypoints.push({ u, v });
-    renderWaypoints();
-
-    try {
-        const calibration = readCalibration();
-        const summary = getWaypointSummary({ u, v }, state.waypoints.length - 1, calibration);
-        showMissionTip(`已添加航点：${summary}`, false);
-    } catch (error) {
-        showMissionTip("已添加航点，补全地图校准后可生成世界坐标", false);
-    }
-}
-
-function buildMissionPayload(routeDraftId = null) {
-    const calibration = readCalibration();
-    const routeName = refs.routeName.value.trim();
-
-    if (!routeName) {
-        throw new Error("请先填写航线名称");
-    }
-    if (state.waypoints.length < 2) {
-        throw new Error("请至少添加 2 个航点");
-    }
-
-    return {
-        routeDraftId,
-        routeName,
-        mapImageUrl: refs.mapImageUrl.value.trim() || null,
-        calibration,
-        waypoints: state.waypoints.map((item, index) => {
-            const worldPoint = pointToWorld(item, calibration);
-            return {
-                order: index + 1,
-                u: Number(item.u.toFixed(6)),
-                v: Number(item.v.toFixed(6)),
-                ...worldPoint
-            };
-        })
-    };
+function haversineMeters(a, b) {
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const earthRadius = 6378137;
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const dLat = lat2 - lat1;
+    const dLng = toRad(b.lng - a.lng);
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    return 2 * earthRadius * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 function initUserPanel() {
@@ -475,57 +136,479 @@ function initUserPanel() {
 
     try {
         const user = JSON.parse(raw);
-        const displayName = user.displayName || user.username || "未知用户";
-        refs.userPanel.textContent = `管理员：${displayName}`;
+        const displayName = user.displayName || user.username || "admin";
+        if (refs.userPanel) {
+            refs.userPanel.textContent = `管理员：${displayName}`;
+        }
     } catch (error) {
         localStorage.removeItem("uav_user");
         window.location.href = "../login/login.html";
     }
 }
 
-function showTip(message, isError = true) {
-    refs.formTip.style.color = isError ? "#ef4444" : "#16a34a";
-    refs.formTip.textContent = message;
+function updateMapStatus() {
+    if (!refs.mapStatus) {
+        return;
+    }
+    if (!state.map) {
+        refs.mapStatus.textContent = "Map initializing...";
+        return;
+    }
+
+    const center = state.map.getCenter();
+    const modeLabel = state.activeTool === "point" ? "point" : state.activeTool === "line" ? "line" : "area";
+    refs.mapStatus.textContent =
+        `zoom ${state.map.getZoom().toFixed(2)} | grid ${state.gridScale.toFixed(1)}x\n` +
+        `waypoints ${state.waypoints.length} | mode ${modeLabel} | nav ${state.routeProfile}\n` +
+        `center ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`;
 }
 
-function isNumber(value) {
-    return value !== "" && !Number.isNaN(Number(value));
+function buildGridLayer(scale = 1) {
+    const tileSize = Math.max(64, Math.min(512, Math.round(96 * scale)));
+    const layer = L.gridLayer({
+        pane: "overlayPane",
+        tileSize,
+        opacity: 0.42
+    });
+
+    layer.createTile = (coords) => {
+        const tile = document.createElement("canvas");
+        const size = layer.getTileSize();
+        tile.width = size.x;
+        tile.height = size.y;
+        const ctx = tile.getContext("2d");
+        if (!ctx) {
+            return tile;
+        }
+
+        const majorColor = "rgba(56, 189, 248, 0.34)";
+        const minorColor = "rgba(56, 189, 248, 0.16)";
+        const step = Math.max(16, Math.round(size.x / 4));
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = minorColor;
+        for (let x = 0; x <= size.x; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x + 0.5, 0);
+            ctx.lineTo(x + 0.5, size.y);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= size.y; y += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, y + 0.5);
+            ctx.lineTo(size.x, y + 0.5);
+            ctx.stroke();
+        }
+
+        ctx.strokeStyle = majorColor;
+        ctx.strokeRect(0.5, 0.5, size.x - 1, size.y - 1);
+        ctx.beginPath();
+        ctx.moveTo(size.x / 2, 0);
+        ctx.lineTo(size.x / 2, size.y);
+        ctx.moveTo(0, size.y / 2);
+        ctx.lineTo(size.x, size.y / 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(226, 232, 240, 0.9)";
+        ctx.font = "11px sans-serif";
+        ctx.fillText(`z${coords.z}`, 7, 14);
+        return tile;
+    };
+
+    return layer;
+}
+
+function rebuildGridLayer() {
+    if (!state.map) {
+        return;
+    }
+    if (state.gridLayer) {
+        state.gridLayer.remove();
+    }
+    state.gridLayer = buildGridLayer(state.gridScale);
+    state.gridLayer.addTo(state.map);
+}
+
+function createPrimaryTileLayer() {
+    return L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxNativeZoom: 19,
+        maxZoom: 22,
+        attribution: "&copy; OpenStreetMap contributors",
+        referrerPolicy: "origin-when-cross-origin"
+    });
+}
+
+function createFallbackTileLayer() {
+    return L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+        maxNativeZoom: 20,
+        maxZoom: 22,
+        subdomains: "abcd",
+        attribution: "&copy; OpenStreetMap contributors &copy; CARTO"
+    });
+}
+
+function switchToFallbackTileLayer() {
+    if (!state.map || state.fallbackTileEnabled) {
+        return;
+    }
+    state.fallbackTileEnabled = true;
+    if (state.baseTileLayer) {
+        state.baseTileLayer.remove();
+    }
+    state.baseTileLayer = createFallbackTileLayer();
+    state.baseTileLayer.addTo(state.map);
+    showMissionTip("OSM blocked. Switched to fallback basemap.", true);
+}
+
+function setMapModeClass() {
+    if (refs.mapCanvas) {
+        refs.mapCanvas.classList.toggle("mode-point", state.activeTool === "point");
+    }
+    updateMapStatus();
+}
+
+function clearMarkersAndRoutes() {
+    state.markers.forEach((marker) => marker.remove());
+    state.markers = [];
+
+    if (state.routeControl) {
+        state.routeControl.remove();
+        state.routeControl = null;
+    }
+    if (state.fallbackRouteLine) {
+        state.fallbackRouteLine.remove();
+        state.fallbackRouteLine = null;
+    }
+}
+
+function drawFallbackPolyline(latLngs) {
+    if (!state.map) {
+        return;
+    }
+    if (state.fallbackRouteLine) {
+        state.fallbackRouteLine.remove();
+    }
+    state.fallbackRouteLine = L.polyline(latLngs, {
+        color: "#f59e0b",
+        weight: 5,
+        opacity: 0.95
+    }).addTo(state.map);
+
+    let distance = 0;
+    for (let i = 1; i < state.waypoints.length; i += 1) {
+        distance += haversineMeters(state.waypoints[i - 1], state.waypoints[i]);
+    }
+    const eta = distance / estimateProfileSpeed(state.routeProfile);
+    showNavSummary(`line estimate: ${(distance / 1000).toFixed(2)} km / ${formatDuration(eta)}`, true);
+}
+
+function refreshNavigationRoute() {
+    if (!state.map) {
+        return;
+    }
+    if (state.routeControl) {
+        state.routeControl.remove();
+        state.routeControl = null;
+    }
+    if (state.fallbackRouteLine) {
+        state.fallbackRouteLine.remove();
+        state.fallbackRouteLine = null;
+    }
+
+    if (state.waypoints.length < 2) {
+        showNavSummary("");
+        return;
+    }
+
+    const latLngs = state.waypoints.map((item) => L.latLng(item.lat, item.lng));
+    const canUseRouting = Boolean(L.Routing && typeof L.Routing.control === "function");
+    if (!canUseRouting) {
+        drawFallbackPolyline(latLngs);
+        return;
+    }
+
+    state.routeControl = L.Routing.control({
+        waypoints: latLngs,
+        addWaypoints: false,
+        draggableWaypoints: false,
+        fitSelectedRoutes: false,
+        show: false,
+        routeWhileDragging: false,
+        createMarker: () => null,
+        lineOptions: {
+            styles: [{ color: "#f59e0b", weight: 5, opacity: 0.95 }]
+        },
+        router: L.Routing.osrmv1({
+            serviceUrl: `https://router.project-osrm.org/route/v1/${state.routeProfile}`
+        })
+    }).addTo(state.map);
+
+    state.routeControl.on("routesfound", (event) => {
+        const route = event.routes && event.routes[0];
+        if (!route || !route.summary) {
+            return;
+        }
+        const km = route.summary.totalDistance / 1000;
+        showNavSummary(`road route: ${km.toFixed(2)} km / ${formatDuration(route.summary.totalTime)}`, false);
+    });
+
+    state.routeControl.on("routingerror", () => {
+        drawFallbackPolyline(latLngs);
+        showMissionTip("Routing service error, switched to polyline.", true);
+    });
+}
+
+function syncStartFromWaypoints() {
+    if (state.waypoints.length === 0) {
+        return;
+    }
+    const first = state.waypoints[0];
+    refs.lng.value = first.lng.toFixed(6);
+    refs.lat.value = first.lat.toFixed(6);
+}
+
+function renderWaypoints() {
+    refs.pointCount.value = String(state.waypoints.length);
+
+    if (state.waypoints.length === 0) {
+        refs.waypointList.innerHTML = '<li class="waypoint-empty">No waypoints</li>';
+        clearMarkersAndRoutes();
+        showNavSummary("");
+        updateMapStatus();
+        return;
+    }
+
+    clearMarkersAndRoutes();
+    state.waypoints.forEach((item, index) => {
+        const marker = L.circleMarker([item.lat, item.lng], {
+            radius: 8,
+            color: "#f59e0b",
+            weight: 2,
+            fillColor: "#ffffff",
+            fillOpacity: 0.95
+        }).addTo(state.map);
+
+        marker.bindTooltip(String(index + 1), {
+            permanent: true,
+            direction: "center",
+            className: "route-waypoint-index"
+        });
+        state.markers.push(marker);
+    });
+
+    refreshNavigationRoute();
+    refs.waypointList.innerHTML = state.waypoints.map((item, index) => `
+        <li class="waypoint-item">
+            <span class="waypoint-badge">${index + 1}</span>
+            <span class="waypoint-text">
+                lat: ${item.lat.toFixed(6)}<br>
+                lng: ${item.lng.toFixed(6)}
+            </span>
+            <button class="waypoint-remove" type="button" data-index="${index}">Remove</button>
+        </li>
+    `).join("");
+
+    refs.waypointList.querySelectorAll(".waypoint-remove").forEach((btn) => {
+        btn.addEventListener("click", () => removeWaypoint(Number(btn.dataset.index)));
+    });
+
+    syncStartFromWaypoints();
+    updateMapStatus();
+}
+
+function addWaypoint(lat, lng, shouldPan = false) {
+    state.waypoints.push({ lat, lng });
+    renderWaypoints();
+    if (shouldPan && state.map) {
+        state.map.panTo([lat, lng], { animate: true, duration: 0.25 });
+    }
+    showMissionTip(`Added waypoint ${state.waypoints.length}: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, false);
+}
+
+function removeWaypoint(index) {
+    if (index < 0 || index >= state.waypoints.length) {
+        return;
+    }
+    state.waypoints.splice(index, 1);
+    renderWaypoints();
+    showMissionTip("Waypoint removed", false);
+}
+
+function fitRouteToView() {
+    if (!state.map) {
+        return;
+    }
+    if (state.waypoints.length === 0) {
+        showMissionTip("No waypoints to fit", true);
+        return;
+    }
+    if (state.waypoints.length === 1) {
+        const p = state.waypoints[0];
+        state.map.setView([p.lat, p.lng], Math.max(15, state.map.getZoom()), { animate: true });
+        return;
+    }
+    const bounds = L.latLngBounds(state.waypoints.map((item) => [item.lat, item.lng]));
+    state.map.fitBounds(bounds.pad(0.2), { animate: true });
+}
+
+function initMap() {
+    if (typeof L === "undefined") {
+        showMissionTip("Map library failed to load.", true);
+        return;
+    }
+
+    state.map = L.map(refs.realMap, {
+        zoomSnap: 0,
+        zoomDelta: 0.1,
+        minZoom: 2,
+        maxZoom: 22,
+        wheelPxPerZoomLevel: 100,
+        scrollWheelZoom: true,
+        touchZoom: true,
+        boxZoom: true,
+        inertia: true
+    }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+
+    state.baseTileLayer = createPrimaryTileLayer();
+    state.baseTileLayer.addTo(state.map);
+    state.baseTileLayer.on("tileerror", () => {
+        state.tileErrorCount += 1;
+        if (state.tileErrorCount >= 2) {
+            switchToFallbackTileLayer();
+        }
+    });
+
+    if (window.location.protocol === "file:") {
+        showMissionTip("Please open via http://127.0.0.1:8000 (not file://) to avoid tile blocking.", true);
+    }
+
+    rebuildGridLayer();
+    L.control.scale({ imperial: false }).addTo(state.map);
+
+    state.map.on("click", (event) => {
+        if (state.activeTool !== "point") {
+            showMissionTip("Switch to point mode before adding waypoints.", true);
+            return;
+        }
+        addWaypoint(event.latlng.lat, event.latlng.lng, true);
+    });
+
+    state.map.on("zoom moveend", updateMapStatus);
+    setMapModeClass();
+    updateMapStatus();
+    if (window.location.protocol !== "file:") {
+        showMissionTip("Real map ready. Drag, zoom and click to add waypoints.", false);
+    }
 }
 
 function validateForm() {
     if (!refs.routeName.value.trim()) {
-        return "请填写航线名称";
+        return "Route name is required.";
     }
     if (!isNumber(refs.lng.value) || Number(refs.lng.value) < -180 || Number(refs.lng.value) > 180) {
-        return "经度应为 -180 到 180 之间的数字";
+        return "Start longitude must be in [-180, 180].";
     }
     if (!isNumber(refs.lat.value) || Number(refs.lat.value) < -90 || Number(refs.lat.value) > 90) {
-        return "纬度应为 -90 到 90 之间的数字";
+        return "Start latitude must be in [-90, 90].";
     }
     if (!isNumber(refs.distance.value) || Number(refs.distance.value) <= 0) {
-        return "航点间距应为大于 0 的数字";
-    }
-    if (!isNumber(refs.pointCount.value) || Number(refs.pointCount.value) <= 1) {
-        return "航点数量应为大于 1 的数字";
+        return "Distance must be greater than 0.";
     }
     if (!isNumber(refs.direction.value) || Number(refs.direction.value) < 0 || Number(refs.direction.value) > 360) {
-        return "航点方向应为 0 到 360 之间的数字";
+        return "Direction must be in [0, 360].";
     }
     if (!isNumber(refs.height.value) || Number(refs.height.value) <= 0) {
-        return "航线高度应为大于 0 的数字";
+        return "Height must be greater than 0.";
+    }
+    if (!isNumber(refs.defaultAltitude.value) || Number(refs.defaultAltitude.value) <= 0) {
+        return "Default altitude must be greater than 0.";
+    }
+    if (state.waypoints.length < 2) {
+        return "At least 2 waypoints are required.";
     }
     return "";
 }
 
+function buildMissionPayload(routeDraftId = null) {
+    const routeName = refs.routeName.value.trim();
+    if (!routeName) {
+        throw new Error("Route name is empty.");
+    }
+    if (state.waypoints.length < 2) {
+        throw new Error("At least 2 waypoints are required.");
+    }
+
+    const defaultAltitude = Number(refs.defaultAltitude.value);
+    if (!Number.isFinite(defaultAltitude) || defaultAltitude <= 0) {
+        throw new Error("Default altitude must be > 0.");
+    }
+
+    const lngValues = state.waypoints.map((item) => item.lng);
+    const latValues = state.waypoints.map((item) => item.lat);
+    const minLng = Math.min(...lngValues);
+    const maxLng = Math.max(...lngValues);
+    const minLat = Math.min(...latValues);
+    const maxLat = Math.max(...latValues);
+    const centerLng = (minLng + maxLng) / 2;
+    const centerLat = (minLat + maxLat) / 2;
+    const lngSpan = maxLng - minLng;
+    const latSpan = maxLat - minLat;
+
+    const widthMeters = Math.max(
+        1,
+        (Math.max(lngSpan, 1e-6) * METERS_PER_DEG_LAT * Math.max(0.1, Math.cos((centerLat * Math.PI) / 180)))
+    );
+    const heightMeters = Math.max(1, Math.max(latSpan, 1e-6) * METERS_PER_DEG_LAT);
+
+    return {
+        routeDraftId,
+        routeName,
+        mapImageUrl: null,
+        calibration: {
+            worldCenterX: Number(centerLng.toFixed(6)),
+            worldCenterY: Number(centerLat.toFixed(6)),
+            mapWidthMeters: Number(widthMeters.toFixed(3)),
+            mapHeightMeters: Number(heightMeters.toFixed(3)),
+            invertX: false,
+            invertY: false,
+            defaultAltitude: Number(defaultAltitude.toFixed(3))
+        },
+        waypoints: state.waypoints.map((item, index) => ({
+            order: index + 1,
+            u: lngSpan > 1e-9 ? Number(((item.lng - minLng) / lngSpan).toFixed(6)) : 0.5,
+            v: latSpan > 1e-9 ? Number(((item.lat - minLat) / latSpan).toFixed(6)) : 0.5,
+            worldX: Number(item.lng.toFixed(6)),
+            worldY: Number(item.lat.toFixed(6)),
+            worldZ: Number(defaultAltitude.toFixed(3))
+        }))
+    };
+}
+
 function renderDrafts() {
     if (drafts.length === 0) {
-        refs.draftList.innerHTML = "<li>暂无航线草稿</li>";
+        refs.draftList.innerHTML = "<li>No route drafts</li>";
         return;
     }
 
-    refs.draftList.innerHTML = drafts.map((item, index) => {
-        return `<li>${index + 1}. ${escapeHtml(item.name)} | 点数: ${item.pointCount} | 高度: ${escapeHtml(item.height)}m | 起点: (${escapeHtml(item.lng)}, ${escapeHtml(item.lat)})</li>`;
-    }).join("");
+    refs.draftList.innerHTML = drafts.map((item, index) => `
+        <li>
+            ${index + 1}. ${escapeHtml(item.name)}
+            | points: ${item.pointCount}
+            | height: ${escapeHtml(item.height)}m
+            | start: (${escapeHtml(item.lng)}, ${escapeHtml(item.lat)})
+        </li>
+    `).join("");
+}
+
+async function loadDrafts() {
+    const response = await fetch(`${API_BASE}/api/routes?limit=50`);
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.detail || "Failed to load drafts.");
+    }
+    drafts.length = 0;
+    (data.items || []).forEach((item) => drafts.push(item));
+    renderDrafts();
 }
 
 function resetForm() {
@@ -536,166 +619,49 @@ function resetForm() {
     refs.pointCount.value = "";
     refs.direction.value = "";
     refs.height.value = "";
+    refs.defaultAltitude.value = String(DEFAULT_ALTITUDE);
     showTip("", false);
     showMissionTip("", false);
+    showNavSummary("");
 }
 
-function beginMapDrag(event) {
-    if (event.button !== 0) {
+function applyAreaSelection() {
+    if (refs.province.selectedIndex <= 0 || refs.city.selectedIndex <= 0 || refs.district.selectedIndex <= 0) {
+        showTip("Please select province/city/district first.", true);
         return;
     }
-
-    state.dragging = true;
-    state.dragPointerId = event.pointerId;
-    state.dragStartX = event.clientX;
-    state.dragStartY = event.clientY;
-    state.dragStartPanX = state.mapPanX;
-    state.dragStartPanY = state.mapPanY;
-    state.dragMoved = false;
-    refs.mapCanvas.classList.add("dragging");
-
-    if (refs.mapCanvas.setPointerCapture) {
-        refs.mapCanvas.setPointerCapture(event.pointerId);
+    const key = `${refs.province.value}-${refs.city.value}-${refs.district.value}`;
+    const center = AREA_CENTER_MAP[key] || DEFAULT_MAP_CENTER;
+    if (state.map) {
+        state.map.setView(center, 13.5, { animate: true });
     }
-}
-
-function updateMapDrag(event) {
-    if (!state.dragging || event.pointerId !== state.dragPointerId) {
-        return;
-    }
-
-    const deltaX = event.clientX - state.dragStartX;
-    const deltaY = event.clientY - state.dragStartY;
-    if (!state.dragMoved && Math.hypot(deltaX, deltaY) >= DRAG_THRESHOLD_PX) {
-        state.dragMoved = true;
-    }
-
-    if (!state.dragMoved) {
-        return;
-    }
-
-    event.preventDefault();
-    setMapPan(state.dragStartPanX + deltaX, state.dragStartPanY + deltaY, true);
-}
-
-function endMapDrag(event) {
-    if (!state.dragging) {
-        return;
-    }
-    if (event && state.dragPointerId !== null && event.pointerId !== state.dragPointerId) {
-        return;
-    }
-
-    const moved = state.dragMoved;
-    state.dragging = false;
-    state.dragMoved = false;
-    state.dragPointerId = null;
-    refs.mapCanvas.classList.remove("dragging");
-    if (moved) {
-        state.suppressNextClick = true;
-    }
+    showTip(`Area switched: ${key}`, false);
 }
 
 refs.backToTask.addEventListener("click", () => {
     window.location.href = "../task-center/index.html";
 });
 
-refs.areaConfirm.addEventListener("click", () => {
-    if ([refs.province.value, refs.city.value, refs.district.value].some((value) => ["省", "市", "区/县"].includes(value))) {
-        showTip("请完整选择省市区后再确认", true);
+refs.areaConfirm.addEventListener("click", applyAreaSelection);
+
+refs.fitRoute.addEventListener("click", fitRouteToView);
+
+refs.routeProfile.addEventListener("change", () => {
+    state.routeProfile = refs.routeProfile.value || "driving";
+    refreshNavigationRoute();
+    updateMapStatus();
+});
+
+refs.gridScale.addEventListener("input", () => {
+    const value = Number(refs.gridScale.value);
+    if (!Number.isFinite(value) || value <= 0) {
         return;
     }
-    showTip(`区域已切换为：${refs.province.value}-${refs.city.value}-${refs.district.value}`, false);
+    state.gridScale = value;
+    refs.gridScaleValue.textContent = `${value.toFixed(1)}x`;
+    rebuildGridLayer();
+    updateMapStatus();
 });
-
-refs.mapCanvas.addEventListener("pointerdown", beginMapDrag);
-refs.mapCanvas.addEventListener("pointermove", updateMapDrag);
-refs.mapCanvas.addEventListener("pointerup", endMapDrag);
-refs.mapCanvas.addEventListener("pointercancel", endMapDrag);
-refs.mapCanvas.addEventListener("lostpointercapture", endMapDrag);
-refs.mapCanvas.addEventListener("click", (event) => {
-    addWaypointFromEvent(event);
-});
-
-refs.setAnchorA.addEventListener("click", () => {
-    state.pendingCalibrationAnchor = "A";
-    showMissionTip("请在地图上点击一次，记录标定点 A", false);
-});
-
-refs.setAnchorB.addEventListener("click", () => {
-    state.pendingCalibrationAnchor = "B";
-    showMissionTip("请在地图上点击一次，记录标定点 B", false);
-});
-
-refs.clearCalibration.addEventListener("click", () => {
-    state.calibrationAnchorA = null;
-    state.calibrationAnchorB = null;
-    state.pendingCalibrationAnchor = "";
-    refs.anchorAX.value = "";
-    refs.anchorAY.value = "";
-    refs.anchorBX.value = "";
-    refs.anchorBY.value = "";
-    updateCalibrationTips();
-    saveSettings();
-    renderWaypoints();
-    showMissionTip("标定已清空", false);
-});
-
-refs.mapImageUrl.addEventListener("input", () => {
-    persistAndRefreshBackground();
-});
-refs.mapImageUrl.addEventListener("change", () => {
-    persistAndRefreshBackground();
-});
-
-[refs.defaultAltitude, refs.invertX, refs.invertY, refs.anchorAX, refs.anchorAY, refs.anchorBX, refs.anchorBY].forEach((element) => {
-    element.addEventListener("input", () => {
-        saveSettings();
-        renderWaypoints();
-    });
-    element.addEventListener("change", () => {
-        saveSettings();
-        renderWaypoints();
-    });
-});
-
-function syncCalibrationStateFromInputs() {
-    const worldAX = Number(refs.anchorAX.value);
-    const worldAY = Number(refs.anchorAY.value);
-    const worldBX = Number(refs.anchorBX.value);
-    const worldBY = Number(refs.anchorBY.value);
-
-    state.calibrationAnchorA = Number.isNaN(worldAX) || Number.isNaN(worldAY) ? state.calibrationAnchorA : {
-        ...(state.calibrationAnchorA || { u: 0.25, v: 0.25 }),
-        worldX: worldAX,
-        worldY: worldAY
-    };
-    state.calibrationAnchorB = Number.isNaN(worldBX) || Number.isNaN(worldBY) ? state.calibrationAnchorB : {
-        ...(state.calibrationAnchorB || { u: 0.75, v: 0.75 }),
-        worldX: worldBX,
-        worldY: worldBY
-    };
-    updateCalibrationTips();
-}
-
-[refs.anchorAX, refs.anchorAY, refs.anchorBX, refs.anchorBY].forEach((element) => {
-    element.addEventListener("change", () => {
-        syncCalibrationStateFromInputs();
-        saveSettings();
-        renderWaypoints();
-    });
-});
-
-async function loadDrafts() {
-    const response = await fetch(`${API_BASE}/api/routes?limit=50`);
-    const data = await response.json();
-    if (!response.ok) {
-        throw new Error(data.detail || "草稿加载失败");
-    }
-    drafts.length = 0;
-    (data.items || []).forEach((item) => drafts.push(item));
-    renderDrafts();
-}
 
 refs.saveRoute.addEventListener("click", async () => {
     const err = validateForm();
@@ -703,16 +669,12 @@ refs.saveRoute.addEventListener("click", async () => {
         showTip(err, true);
         return;
     }
-
-    if (state.waypoints.length > 0) {
-        refs.pointCount.value = String(state.waypoints.length);
-    }
-
-    if ([refs.province.value, refs.city.value, refs.district.value].some((value) => ["省", "市", "区/县"].includes(value))) {
-        showTip("请先选择有效区域", true);
+    if (refs.province.selectedIndex <= 0 || refs.city.selectedIndex <= 0 || refs.district.selectedIndex <= 0) {
+        showTip("Please select a valid area first.", true);
         return;
     }
 
+    refs.pointCount.value = String(state.waypoints.length);
     const payload = {
         name: refs.routeName.value.trim(),
         province: refs.province.value,
@@ -727,50 +689,44 @@ refs.saveRoute.addEventListener("click", async () => {
     };
 
     refs.saveRoute.disabled = true;
-    showTip("正在保存航线...", false);
+    showTip("Saving route draft...", false);
     try {
         const response = await fetch(`${API_BASE}/api/routes`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         const data = await response.json();
         if (!response.ok) {
-            throw new Error(data.detail || "保存失败");
+            throw new Error(data.detail || "Save failed.");
         }
 
         state.currentRouteDraftId = data.id;
         await loadDrafts();
-        showTip("航线草稿已保存到数据库", false);
+        showTip("Route draft saved.", false);
     } catch (error) {
-        showTip(error.message || "保存失败", true);
+        showTip(error.message || "Save failed.", true);
     } finally {
         refs.saveRoute.disabled = false;
     }
 });
 
 refs.publishMission.addEventListener("click", async () => {
-    showMissionTip("正在下发航线...", false);
+    showMissionTip("Publishing mission...", false);
     try {
         const payload = buildMissionPayload(state.currentRouteDraftId);
-        saveSettings();
         const response = await fetch(`${API_BASE}/api/route-missions`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
         const data = await response.json();
         if (!response.ok) {
-            throw new Error(data.detail || data.message || "下发失败");
+            throw new Error(data.detail || data.message || "Publish failed.");
         }
-
-        showMissionTip("航线已下发到执行器，桥接脚本会自动读取最新 mission", false);
+        showMissionTip("Mission published.", false);
     } catch (error) {
-        showMissionTip(error.message || "下发失败", true);
+        showMissionTip(error.message || "Publish failed.", true);
     }
 });
 
@@ -779,38 +735,33 @@ refs.cancelRoute.addEventListener("click", resetForm);
 refs.clearWaypoints.addEventListener("click", () => {
     state.waypoints = [];
     renderWaypoints();
-    showMissionTip("航点已清空", false);
+    showMissionTip("Waypoints cleared.", false);
 });
 
-refs.tools.forEach(button => {
+refs.tools.forEach((button) => {
     button.addEventListener("click", () => {
         state.activeTool = button.dataset.tool;
-        refs.tools.forEach(item => item.classList.remove("active"));
+        refs.tools.forEach((item) => item.classList.remove("active"));
         button.classList.add("active");
-        updateMapCanvasModeClass();
+        setMapModeClass();
+        if (state.activeTool !== "point") {
+            showMissionTip("Current mode is browse-only.", false);
+        }
     });
 });
 
-applySettings();
-syncCalibrationStateFromInputs();
-persistAndRefreshBackground();
-updateMapCanvasModeClass();
-keepMapPanInBounds();
-renderWaypoints();
-refs.mapImage.addEventListener("load", () => {
-    keepMapPanInBounds();
-    renderWaypoints();
-});
-if (refs.mapImage.complete) {
-    keepMapPanInBounds();
-    renderWaypoints();
-}
-window.addEventListener("resize", () => {
-    keepMapPanInBounds();
-    renderWaypoints();
-});
-loadDrafts().catch((error) => {
-    showTip(error.message || "草稿初始化失败", true);
-});
-
 initUserPanel();
+resetForm();
+renderWaypoints();
+
+if (refs.gridScaleValue) {
+    refs.gridScaleValue.textContent = `${state.gridScale.toFixed(1)}x`;
+}
+if (refs.routeProfile) {
+    refs.routeProfile.value = state.routeProfile;
+}
+
+initMap();
+loadDrafts().catch((error) => {
+    showTip(error.message || "Draft initialization failed.", true);
+});

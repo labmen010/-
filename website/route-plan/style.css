@@ -194,63 +194,54 @@ a {
 .map-canvas {
     position: absolute;
     inset: 0;
-    background:
-        radial-gradient(circle at 15% 30%, rgba(46, 204, 113, 0.18), transparent 34%),
-        radial-gradient(circle at 75% 70%, rgba(59, 130, 246, 0.14), transparent 30%),
-        linear-gradient(135deg, #1f3e2f 0%, #304f32 36%, #1f2937 100%);
     overflow: hidden;
 }
 
-.map-image {
+.real-map {
     position: absolute;
     inset: 0;
+    z-index: 1;
+}
+
+.real-map .leaflet-container {
     width: 100%;
     height: 100%;
-    object-fit: contain;
-    object-position: center;
-    z-index: 1;
-    pointer-events: none;
-    will-change: transform;
+    background: #1f2937;
 }
 
 .map-mask {
     position: absolute;
     inset: 0;
-    background-image: linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
-    background-size: 32px 32px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.04), rgba(15, 23, 42, 0.16));
+    opacity: 0.22;
     z-index: 2;
     pointer-events: none;
 }
 
-.route-layer {
+.map-status {
     position: absolute;
-    inset: 0;
-    z-index: 2;
+    right: 14px;
+    top: 14px;
+    z-index: 4;
+    background: rgba(15, 23, 42, 0.72);
+    color: #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre-line;
     pointer-events: none;
 }
 
-.route-line {
-    fill: none;
-    stroke: rgba(255, 215, 0, 0.95);
-    stroke-width: 6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.28));
-}
-
-.route-point {
-    fill: rgba(255, 255, 255, 0.96);
-    stroke: #f59e0b;
-    stroke-width: 4;
-}
-
-.route-point-label {
-    fill: #0f172a;
-    font-size: 26px;
+.route-waypoint-index {
+    background: rgba(15, 23, 42, 0.8);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    box-shadow: none;
+    font-size: 11px;
     font-weight: 700;
-    text-anchor: middle;
-    dominant-baseline: middle;
+    padding: 1px 6px;
 }
 
 .route-panel {
@@ -315,49 +306,29 @@ a {
     font-size: 16px;
 }
 
-.toggle-row {
+.range-row {
     display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    margin: 6px 0 0;
-}
-
-.calibration-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin-top: 12px;
-}
-
-.calibration-card {
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 14px;
-    padding: 12px;
-    background: rgba(248, 250, 252, 0.88);
-}
-
-.calibration-card h5 {
-    margin: 0 0 10px;
-    font-size: 14px;
-}
-
-.calibration-card .form-control {
-    height: 36px;
-}
-
-.mini-tip {
-    margin: 8px 0 0;
-    font-size: 12px;
-    color: #64748b;
-}
-
-.toggle-item {
-    display: inline-flex !important;
     align-items: center;
     gap: 8px;
-    margin: 0 !important;
-    font-size: 14px;
-    color: #334155;
+}
+
+.range-control {
+    flex: 1 1 auto;
+    height: 34px;
+    padding: 0;
+}
+
+.range-value {
+    width: 56px;
+    text-align: right;
+    font-size: 12px;
+    color: #475569;
+    font-weight: 600;
+}
+
+#navSummary {
+    color: #0284c7;
+    min-height: 18px;
 }
 
 .waypoint-list {
@@ -459,23 +430,30 @@ a {
 
 .map-wrap,
 .map-canvas,
-.map-image,
+.real-map,
 .map-mask,
-.route-layer {
+.map-status {
     user-select: none;
 }
 
 .map-canvas {
-    cursor: grab;
     touch-action: none;
 }
 
-.map-canvas.mode-point {
+.map-canvas.mode-point .leaflet-container {
     cursor: crosshair;
 }
 
-.map-canvas.dragging {
-    cursor: grabbing;
+.leaflet-routing-container {
+    display: none !important;
+}
+
+.leaflet-control-zoom a {
+    border-radius: 10px !important;
+}
+
+.leaflet-control-attribution {
+    font-size: 11px;
 }
 
 @media (max-width: 1080px) {
@@ -499,9 +477,5 @@ a {
 
     .brand-copy {
         white-space: normal;
-    }
-
-    .calibration-grid {
-        grid-template-columns: 1fr;
     }
 }

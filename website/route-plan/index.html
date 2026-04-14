@@ -3,7 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="origin-when-cross-origin">
     <title>航线规划 - 无人机智能巡检管控系统</title>
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    >
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
+    >
     <link rel="stylesheet" href="style.css">
 </head>
 <body class="skin-default-dark fixed-layout">
@@ -90,9 +99,9 @@
 
                 <div class="map-wrap">
                     <div class="map-canvas" id="mapCanvas">
-                        <img id="mapImage" class="map-image" alt="UE4 地图底图">
+                        <div id="realMap" class="real-map"></div>
                         <div class="map-mask"></div>
-                        <svg id="routeLayer" class="route-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+                        <div id="mapStatus" class="map-status"></div>
                     </div>
 
                     <section class="route-panel card">
@@ -130,41 +139,27 @@
 
                             <p class="tip" id="formTip"></p>
 
-                            <h4 class="section-title">地图校准</h4>
-                            <label>底图地址
-                                <input id="mapImageUrl" class="form-control" type="text" placeholder="例如：UE4 俯视图截图 URL">
+                            <h4 class="section-title">导航参数</h4>
+                            <label>导航航高(m)
+                                <input id="defaultAltitude" class="form-control" type="text" placeholder="执行航线时的高度" value="25">
                             </label>
-                            <label>默认航高(m)
-                                <input id="defaultAltitude" class="form-control" type="text" placeholder="执行航线时的高度">
+                            <label>导航模式
+                                <select id="routeProfile" class="form-control">
+                                    <option value="driving" selected>驾车优先</option>
+                                    <option value="walking">步行优先</option>
+                                    <option value="cycling">骑行优先</option>
+                                </select>
                             </label>
-
-                            <div class="toggle-row">
-                                <label class="toggle-item"><input id="invertX" type="checkbox"> X 轴反向</label>
-                                <label class="toggle-item"><input id="invertY" type="checkbox"> Y 轴反向</label>
-                            </div>
-
-                            <div class="calibration-grid">
-                                <div class="calibration-card">
-                                    <h5>标定点 A</h5>
-                                    <label>世界 X <input id="anchorAX" class="form-control" type="text" placeholder="UE4 世界坐标 X"></label>
-                                    <label>世界 Y <input id="anchorAY" class="form-control" type="text" placeholder="UE4 世界坐标 Y"></label>
-                                    <button id="setAnchorA" class="btn btn-outline-primary btn-sm" type="button">记录当前点击为 A</button>
-                                    <p id="anchorATip" class="mini-tip">尚未记录</p>
+                            <label>网格缩放
+                                <div class="range-row">
+                                    <input id="gridScale" class="form-control range-control" type="range" min="0.5" max="3" step="0.1" value="1">
+                                    <span id="gridScaleValue" class="range-value">1.0x</span>
                                 </div>
-                                <div class="calibration-card">
-                                    <h5>标定点 B</h5>
-                                    <label>世界 X <input id="anchorBX" class="form-control" type="text" placeholder="UE4 世界坐标 X"></label>
-                                    <label>世界 Y <input id="anchorBY" class="form-control" type="text" placeholder="UE4 世界坐标 Y"></label>
-                                    <button id="setAnchorB" class="btn btn-outline-primary btn-sm" type="button">记录当前点击为 B</button>
-                                    <p id="anchorBTip" class="mini-tip">尚未记录</p>
-                                </div>
-                            </div>
+                            </label>
+                            <p class="tip" id="navSummary"></p>
 
                             <div class="panel-actions compact">
-                                <button id="clearCalibration" class="btn btn-outline-secondary" type="button">清空标定</button>
-                            </div>
-
-                            <div class="panel-actions compact">
+                                <button id="fitRoute" class="btn btn-outline-primary" type="button">聚焦航线</button>
                                 <button id="clearWaypoints" class="btn btn-outline-danger" type="button">清空航点</button>
                             </div>
 
@@ -192,6 +187,8 @@
         </div>
     </div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
