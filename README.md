@@ -103,24 +103,3 @@ python website/backend/airsim_realtime_bridge.py --vehicle Drone1 --camera down_
 
 点击“开启实时查看”，页面会轮询最新检测记录并更新结果图。
 
-### 5.7 route-plan 下发 UE4/AirSim 航线
-
-现在航线规划页不只是保存草稿，还可以生成可执行 mission：
-
-- 在 website/route-plan/index.html 中点击地图添加航点
-- 先设置底图为 UE4 俯视图截图或同源地图
-- 使用标定点 A / B 记录地图上的两个已知世界坐标点，让浏览器底图和 UE4 俯视图使用同一套坐标基准
-- 先点“保存草稿”，再点“下发执行”
-
-如果地图方向和 UE4 不一致，可以勾选 X/Y 轴反向后重新标定。
-
-后端会写入最新 mission，AirSim 桥接脚本会自动轮询并按航点飞行：
-
-- website/backend/airsim_realtime_bridge.py
-
-启动示例：
-
-python website/backend/airsim_realtime_bridge.py --vehicle Drone1 --camera down_cam --backend http://127.0.0.1:8000 --fps 6 --takeoff --flight-height 25
-
-如果你的 UE4/AirSim 已经在空中，也可以只执行任务，不自动起飞。
-
